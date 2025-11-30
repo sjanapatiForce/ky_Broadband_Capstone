@@ -1,12 +1,23 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
 import plotly.express as px
+import sqlite3
+from pathlib import Path
 
-# =========================================================
-# CONFIG
-# =========================================================
-DB_PATH = r"db\broadband_ky.db"
+# --------------------------------------------------
+# CONFIG: locate DB relative to this file
+# --------------------------------------------------
+THIS_DIR = Path(__file__).resolve().parent          # .../analysis
+PROJECT_ROOT = THIS_DIR.parent                      # repo root
+DB_PATH = PROJECT_ROOT / "db" / "broadband_ky.db"   # .../db/broadband_ky.db
+
+st.set_page_config(
+    page_title="KY Broadband Analytics Dashboard",
+    page_icon="📶",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 
 st.set_page_config(
     page_title="KY Broadband Analytics Portal",
@@ -73,20 +84,32 @@ st.markdown(SAAS_STYLE, unsafe_allow_html=True)
 # =========================================================
 # LOAD DATA FROM SQLITE
 # =========================================================
-@st.cache_data(show_spinner="Loading broadband database…")
+@st.cache_data(show_spinner="Connecting to database…")
 def load_db():
     conn = sqlite3.connect(DB_PATH)
 
     county_df = pd.read_sql("SELECT * FROM county_summary", conn)
     provider_df = pd.read_sql("SELECT * FROM provider_summary_by_county", conn)
-    hex_df = pd.read_sql("""
+    hex_df = pd.read_sql(
+        """
         SELECT h.*, c.county_name
         FROM hex_coverage h
         LEFT JOIN county_summary c
-        ON h.county_fips = c.county_fips
-    """, conn)
+          ON h.county_fips = c.county_fips;
+        """,
+        conn,
+    )
 
     conn.close()
+
+    county_df["county_fips"] = county_df["county_fips"].astype(str).str.zfill(5)
+    provider_df["county_fips"] = provider_df["county_fips"].astype(str).str.zfill(5)
+    hex_df["county_fips"] = hex_df["county_fips"].astype(str).str.zfill(5)
+
+    return county_df, provider_df, hex_df
+
+
+
 
     # normalize formats
     county_df["county_fips"] = county_df["county_fips"].astype(str).str.zfill(5)
