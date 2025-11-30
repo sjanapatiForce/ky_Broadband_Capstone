@@ -122,7 +122,8 @@ def load_ky_county_geojson():
 
     with open(gj_path, "r") as f:
         return json.load(f)
-    
+
+
 def enrich_county_with_hex(county_df: pd.DataFrame, hex_df: pd.DataFrame) -> pd.DataFrame:
     """Attach hex service-category counts and scores to county_df."""
     # hex counts per county by service_category
@@ -235,7 +236,7 @@ def enrich_county_with_hex(county_df: pd.DataFrame, hex_df: pd.DataFrame) -> pd.
 # ==================================================
 # LOAD DATA
 # ==================================================
-    
+
 county_df_raw, provider_df, hex_df = load_db()
 county_df = enrich_county_with_hex(county_df_raw, hex_df)
 ky_geojson = load_ky_county_geojson()
@@ -243,6 +244,7 @@ ky_geojson = load_ky_county_geojson()
 # Pre-calc lists for filters
 service_categories = sorted(hex_df["service_category"].dropna().unique().tolist())
 all_providers = sorted(provider_df["provider_name"].dropna().unique().tolist())
+
 # Extract tech types list
 tech_values = set()
 for val in hex_df["tech_types"].dropna().unique():
@@ -818,6 +820,14 @@ with tab_explorer:
             }
 
             # ---------- DRAW CHOROPLETH ----------
+            # choose color scale based on whether "high is bad" or "high is good"
+            if metric_col in ["pct_unserved_hex", "pct_underserved_hex"]:
+                # higher = worse → red for high values
+                color_scale = "RdYlGn_r"
+            else:
+                # higher = better → green for high values
+                color_scale = "RdYlGn"
+
             fig_state = px.choropleth_mapbox(
                 df_map,
                 geojson=ky_geojson,
@@ -831,7 +841,7 @@ with tab_explorer:
                 zoom=6.2,
                 opacity=0.85,
                 height=650,
-                color_continuous_scale="RdYlGn_r",
+                color_continuous_scale=color_scale,
             )
             fig_state.update_layout(margin={"r": 0, "t": 10, "l": 0, "b": 0})
 
