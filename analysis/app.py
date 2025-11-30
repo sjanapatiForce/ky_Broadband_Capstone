@@ -692,6 +692,7 @@ with e_right:
 # --------------------------------------------------
 with tab_explorer:
     st.markdown("#### County Explorer")
+
     # IF ALL KENTUCKY -> show statewide county choropleth
     if selected_fips is None:
         if ky_geojson is None:
@@ -700,22 +701,84 @@ with tab_explorer:
                 "Add it to the repo to see the statewide map."
             )
         else:
-            st.markdown(
-                "Exploring **All Kentucky** – county-level broadband coverage "
-                "based on FCC BDC hex aggregation."
-            )
+            # ---------- BUILD MAP DATAFRAME DEPENDING ON PROVIDER FILTER ----------
+            if provider_choice == "All providers":
+                st.markdown(
+                    "Exploring **All Kentucky** – county-level broadband coverage "
+                    "based on FCC BDC hex aggregation (all providers)."
+                )
 
-            # choose what to color by
-            metric_options = {
-                "Percent unserved hex cells": "pct_unserved_hex",
-                "Percent underserved hex cells": "pct_underserved_hex",
-                "Broadband Quality Score (0–100)": "broadband_quality_score",
-                "Digital Readiness Index (0–100)": "digital_readiness_index",
-            }
+                df_map = county_df.copy()
+
+                metric_options = {
+                    "Percent unserved hex cells": "pct_unserved_hex",
+                    "Percent underserved hex cells": "pct_underserved_hex",
+                    "Broadband Quality Score (0–100)": "broadband_quality_score",
+                    "Digital Readiness Index (0–100)": "digital_readiness_index",
+                }
+
+            else:
+                st.markdown(
+                    f"Exploring **All Kentucky** – footprint for provider "
+                    f"**{provider_choice}**."
+                )
+
+                tmp = provider_df[provider_df["provider_name"] == provider_choice].copy()
+                tmp["locations"] = pd.to_numeric(tmp["locations"], errors="coerce").fillna(0)
+                tmp["underserved_locations"] = pd.to_numeric(
+                    tmp["underserved_locations"], errors="coerce"
+                ).fillna(0)
+
+                # aggregate provider metrics per county
+                prov_agg = (
+                    tmp.groupby("county_fips", as_index=False)[
+                        ["locations", "underserved_locations"]
+                    ]
+                    .sum()
+                )
+
+                # base county info (including total_locations for share)
+                base_cols = [
+                    c
+                    for c in [
+                        "county_fips",
+                        "county_name",
+                        "total_locations",
+                        "broadband_quality_score",
+                        "digital_readiness_index",
+                        "pct_unserved_hex",
+                        "pct_underserved_hex",
+                    ]
+                    if c in county_df.columns
+                ]
+                df_map = county_df[base_cols].merge(
+                    prov_agg, on="county_fips", how="left"
+                )
+
+                df_map[["locations", "underserved_locations"]] = df_map[
+                    ["locations", "underserved_locations"]
+                ].fillna(0)
+
+                # provider's share of locations in each county (0–100%)
+                df_map["provider_coverage_share"] = (
+                    df_map["locations"]
+                    / pd.to_numeric(df_map["total_locations"], errors="coerce").replace(
+                        {0: pd.NA}
+                    )
+                ) * 100
+                df_map["provider_coverage_share"] = df_map[
+                    "provider_coverage_share"
+                ].fillna(0)
+
+                metric_options = {
+                    "Provider locations in county": "locations",
+                    "Provider underserved locations": "underserved_locations",
+                    "Provider coverage share (%)": "provider_coverage_share",
+                }
+
+            # ---------- SELECT METRIC TO COLOR BY ----------
             pretty_to_col = {
-                label: col
-                for label, col in metric_options.items()
-                if col in county_df.columns
+                label: col for label, col in metric_options.items() if col in df_map.columns
             }
 
             metric_label = st.selectbox(
@@ -725,11 +788,11 @@ with tab_explorer:
             )
             metric_col = pretty_to_col[metric_label]
 
-            df_map = county_df.copy()
-            # convert percents to 0–100 for nicer legend if needed
+            # if it's a fraction, convert to 0–100 for legend readability
             if metric_col in ["pct_unserved_hex", "pct_underserved_hex"]:
                 df_map[metric_col] = df_map[metric_col] * 100
 
+            # ---------- DRAW CHOROPLETH ----------
             fig_state = px.choropleth_mapbox(
                 df_map,
                 geojson=ky_geojson,
@@ -739,36 +802,64 @@ with tab_explorer:
                 hover_name="county_name",
                 hover_data={
                     "county_fips": True,
-                    "hex_unserved": True,
-                    "hex_underserved": True,
-                    "hex_served": True,
-                    "broadband_quality_score": True,
-                    "digital_readiness_index": True,
+                    "locations": ":,"
+                    if "locations" in df_map.columns
+                    else False,
+                    "underserved_locations": ":,"
+                    if "underserved_locations" in df_map.columns
+                    else False,
+                    "total_locations": ":,"
+                    if "total_locations" in df_map.columns
+                    else False,
+                    "broadband_quality_score": True
+                    if "broadband_quality_score" in df_map.columns
+                    else False,
+                    "digital_readiness_index": True
+                    if "digital_readiness_index" in df_map.columns
+                    else False,
+                    "pct_unserved_hex": True
+                    if "pct_unserved_hex" in df_map.columns
+                    else False,
+                    "pct_underserved_hex": True
+                    if "pct_underserved_hex" in df_map.columns
+                    else False,
+                    "provider_coverage_share": True
+                    if "provider_coverage_share" in df_map.columns
+                    else False,
                 },
                 mapbox_style="carto-positron",
                 center={"lat": 37.8, "lon": -85.8},
                 zoom=6.2,
-                opacity=0.8,
+                opacity=0.85,
                 height=650,
-                color_continuous_scale="RdYlGn_r",  # red=bad, green=good
+                color_continuous_scale="RdYlGn_r",
             )
             fig_state.update_layout(margin={"r": 0, "t": 10, "l": 0, "b": 0})
 
             st.markdown('<div class="section-card">', unsafe_allow_html=True)
             st.subheader("Statewide county-level broadband map")
             st.plotly_chart(fig_state, use_container_width=True)
-            st.caption(
-                "Each polygon is a Kentucky county. Colors show the selected metric "
-                "(e.g., percent unserved hex cells or broadband quality score) "
-                "derived from hex-level FCC BDC data."
-            )
-            st.markdown("</div>", unsafe_allow_html=True)
+
+            if provider_choice == "All providers":
+                st.caption(
+                    "Each polygon is a Kentucky county. Colors show the selected broadband "
+                    "metric (e.g., percent unserved hex cells or broadband quality score) "
+                    "aggregated across all providers."
+                )
+            else:
+                st.caption(
+                    f"Each polygon is a Kentucky county. Colors show **{provider_choice}**’s "
+                    "footprint (locations, underserved locations, or coverage share) in each county."
+                )
 
             st.info(
-                "To see the detailed **H3 hex map** for a single county, choose a county "
+                "To see detailed H3 hex coverage for a specific county, choose a county "
                 "in the **County** filter above."
             )
+
+    # ELSE -> existing per-county hex map logic remains unchanged
     else:
+        ...
 
         # Filter hexes for this county only, but keep provider/tech filters
         county_hex = hex_df[hex_df["county_fips"] == selected_fips].copy()
