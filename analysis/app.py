@@ -107,6 +107,7 @@ def load_db():
 
     return county_df, provider_df, hex_df
 
+
 @st.cache_data
 def load_ky_county_geojson():
     """
@@ -121,9 +122,7 @@ def load_ky_county_geojson():
 
     with open(gj_path, "r") as f:
         return json.load(f)
-
-
-
+    
 def enrich_county_with_hex(county_df: pd.DataFrame, hex_df: pd.DataFrame) -> pd.DataFrame:
     """Attach hex service-category counts and scores to county_df."""
     # hex counts per county by service_category
@@ -236,15 +235,14 @@ def enrich_county_with_hex(county_df: pd.DataFrame, hex_df: pd.DataFrame) -> pd.
 # ==================================================
 # LOAD DATA
 # ==================================================
+    
 county_df_raw, provider_df, hex_df = load_db()
 county_df = enrich_county_with_hex(county_df_raw, hex_df)
 ky_geojson = load_ky_county_geojson()
 
-
 # Pre-calc lists for filters
 service_categories = sorted(hex_df["service_category"].dropna().unique().tolist())
 all_providers = sorted(provider_df["provider_name"].dropna().unique().tolist())
-
 # Extract tech types list
 tech_values = set()
 for val in hex_df["tech_types"].dropna().unique():
@@ -318,7 +316,6 @@ with fb3:
 with fb4:
     tech_choices = ["All technologies"] + all_tech_types
     tech_choice = st.selectbox("Tech type", tech_choices, index=0)
-
 
 # ==================================================
 # FILTERED DATASETS
@@ -417,9 +414,7 @@ tab_overview, tab_explorer, tab_data = st.tabs(
 with tab_overview:
     st.markdown(
         f"#### Overview – **{selected_county_name}**"
-        + (
-            "" if svc_choice == "All" else f" · Service: **{svc_choice}**"
-        )
+        + ("" if svc_choice == "All" else f" · Service: **{svc_choice}**")
     )
 
     # KPI row 1: population & service coverage
@@ -427,25 +422,36 @@ with tab_overview:
 
     with k1:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown('<div class="small-label">Total Population</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="small-label">Total Population</div>', unsafe_allow_html=True
+        )
         st.metric("", f"{int(pop_total):,}")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with k2:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown('<div class="small-label">Unserved hex cells (red)</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="small-label">Unserved hex cells (red)</div>',
+            unsafe_allow_html=True,
+        )
         st.metric("", f"{int(unserved_total):,}")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with k3:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown('<div class="small-label">Underserved hex cells (yellow)</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="small-label">Underserved hex cells (yellow)</div>',
+            unsafe_allow_html=True,
+        )
         st.metric("", f"{int(underserved_total):,}")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with k4:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown('<div class="small-label">Served hex cells (green)</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="small-label">Served hex cells (green)</div>',
+            unsafe_allow_html=True,
+        )
         st.metric("", f"{int(served_total):,}")
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -496,18 +502,18 @@ with tab_overview:
             tech_df = hex_filtered.copy()
             tech_df["tech_types"] = tech_df["tech_types"].fillna("Unknown")
 
-# split semicolon-separated tech_types into individual rows
+            # split semicolon-separated tech_types into individual rows
             tech_long = tech_df.assign(
-            tech=tech_df["tech_types"].str.split(";")
-                ).explode("tech")
+                tech=tech_df["tech_types"].str.split(";")
+            ).explode("tech")
             tech_long["tech"] = tech_long["tech"].str.strip()
             tech_long = tech_long[tech_long["tech"] != ""]  # drop blanks just in case
 
-# clean, duplicate-free aggregation
+            # clean, duplicate-free aggregation
             tech_counts = (
-            tech_long.groupby("tech", as_index=False)
-            .size()
-            .rename(columns={"size": "count"})
+                tech_long.groupby("tech", as_index=False)
+                .size()
+                .rename(columns={"size": "count"})
             )
 
             fig_tech = px.pie(
@@ -516,7 +522,7 @@ with tab_overview:
                 values="count",
                 title="Share of hex cells by technology type",
             )
-
+            st.plotly_chart(fig_tech, use_container_width=True)
 
     # Devices bar
     with c_right:
@@ -570,70 +576,69 @@ with tab_overview:
         )
         st.plotly_chart(fig_edu, use_container_width=True)
 
-with e_right:
-    if prov_filtered.empty:
-        st.info("No provider records match the current filters.")
-    else:
-        tmp = prov_filtered.copy()
+    with e_right:
+        if prov_filtered.empty:
+            st.info("No provider records match the current filters.")
+        else:
+            tmp = prov_filtered.copy()
 
-        # make sure numeric
-        tmp["locations"] = pd.to_numeric(tmp["locations"], errors="coerce").fillna(0)
-        tmp["underserved_locations"] = pd.to_numeric(
-            tmp["underserved_locations"], errors="coerce"
-        ).fillna(0)
+            # make sure numeric
+            tmp["locations"] = pd.to_numeric(tmp["locations"], errors="coerce").fillna(0)
+            tmp["underserved_locations"] = pd.to_numeric(
+                tmp["underserved_locations"], errors="coerce"
+            ).fillna(0)
 
-        # how many providers to show
-        top_n = st.slider(
-            "Number of providers to show (by locations)",
-            min_value=5,
-            max_value=40,
-            value=20,
-            step=5,
-            key="prov_top_n",
-        )
+            # how many providers to show
+            top_n = st.slider(
+                "Number of providers to show (by locations)",
+                min_value=5,
+                max_value=40,
+                value=20,
+                step=5,
+                key="prov_top_n",
+            )
 
-        # aggregate across selected counties
-        prov_agg = (
-            tmp.groupby("provider_name", as_index=False)[
-                ["locations", "underserved_locations"]
-            ]
-            .sum()
-            .sort_values("locations", ascending=False)
-            .head(top_n)
-        )
+            # aggregate across selected counties
+            prov_agg = (
+                tmp.groupby("provider_name", as_index=False)[
+                    ["locations", "underserved_locations"]
+                ]
+                .sum()
+                .sort_values("locations", ascending=False)
+                .head(top_n)
+            )
 
-        # pretty labels like 1,234,567
-        prov_agg["locations_label"] = (
-            prov_agg["locations"].round(0).astype(int).map("{:,}".format)
-        )
+            # pretty labels like 1,234,567
+            prov_agg["locations_label"] = (
+                prov_agg["locations"].round(0).astype(int).map("{:,}".format)
+            )
 
-        fig_prov = px.bar(
-            prov_agg,
-            x="locations",
-            y="provider_name",
-            orientation="h",
-            hover_data={
-                "locations": ":,",
-                "underserved_locations": ":,",
-                "provider_name": True,
-            },
-            title="Provider footprint (locations in scope)",
-        )
+            fig_prov = px.bar(
+                prov_agg,
+                x="locations",
+                y="provider_name",
+                orientation="h",
+                hover_data={
+                    "locations": ":,",
+                    "underserved_locations": ":,",
+                    "provider_name": True,
+                },
+                title="Provider footprint (locations in scope)",
+            )
 
-        fig_prov.update_traces(
-            text=prov_agg["locations_label"],
-            textposition="outside",
-            cliponaxis=False,
-        )
+            fig_prov.update_traces(
+                text=prov_agg["locations_label"],
+                textposition="outside",
+                cliponaxis=False,
+            )
 
-        fig_prov.update_layout(
-            xaxis_title="Reported service locations",
-            yaxis_title="Provider",
-            margin=dict(l=0, r=20, t=60, b=40),
-        )
+            fig_prov.update_layout(
+                xaxis_title="Reported service locations",
+                yaxis_title="Provider",
+                margin=dict(l=0, r=20, t=60, b=40),
+            )
 
-        st.plotly_chart(fig_prov, use_container_width=True)
-
+            st.plotly_chart(fig_prov, use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -760,12 +765,16 @@ with tab_explorer:
                 ].fillna(0)
 
                 # provider's share of locations in each county (0–100%)
-                df_map["provider_coverage_share"] = (
-                    df_map["locations"]
-                    / pd.to_numeric(df_map["total_locations"], errors="coerce").replace(
-                        {0: pd.NA}
-                    )
-                ) * 100
+                if "total_locations" in df_map.columns:
+                    denom = pd.to_numeric(
+                        df_map["total_locations"], errors="coerce"
+                    ).replace({0: pd.NA})
+                    df_map["provider_coverage_share"] = (
+                        df_map["locations"] / denom
+                    ) * 100
+                else:
+                    df_map["provider_coverage_share"] = pd.NA
+
                 df_map["provider_coverage_share"] = df_map[
                     "provider_coverage_share"
                 ].fillna(0)
@@ -792,6 +801,22 @@ with tab_explorer:
             if metric_col in ["pct_unserved_hex", "pct_underserved_hex"]:
                 df_map[metric_col] = df_map[metric_col] * 100
 
+            # ---------- BUILD SAFE HOVER DATA ----------
+            hover_candidates = {
+                "county_fips": True,
+                "locations": ":,",
+                "underserved_locations": ":,",
+                "total_locations": ":,",
+                "broadband_quality_score": True,
+                "digital_readiness_index": True,
+                "pct_unserved_hex": True,
+                "pct_underserved_hex": True,
+                "provider_coverage_share": True,
+            }
+            hover_data = {
+                col: spec for col, spec in hover_candidates.items() if col in df_map.columns
+            }
+
             # ---------- DRAW CHOROPLETH ----------
             fig_state = px.choropleth_mapbox(
                 df_map,
@@ -800,33 +825,7 @@ with tab_explorer:
                 featureidkey="properties.GEOID",
                 color=metric_col,
                 hover_name="county_name",
-                hover_data={
-                    "county_fips": True,
-                    "locations": ":,"
-                    if "locations" in df_map.columns
-                    else False,
-                    "underserved_locations": ":,"
-                    if "underserved_locations" in df_map.columns
-                    else False,
-                    "total_locations": ":,"
-                    if "total_locations" in df_map.columns
-                    else False,
-                    "broadband_quality_score": True
-                    if "broadband_quality_score" in df_map.columns
-                    else False,
-                    "digital_readiness_index": True
-                    if "digital_readiness_index" in df_map.columns
-                    else False,
-                    "pct_unserved_hex": True
-                    if "pct_unserved_hex" in df_map.columns
-                    else False,
-                    "pct_underserved_hex": True
-                    if "pct_underserved_hex" in df_map.columns
-                    else False,
-                    "provider_coverage_share": True
-                    if "provider_coverage_share" in df_map.columns
-                    else False,
-                },
+                hover_data=hover_data,
                 mapbox_style="carto-positron",
                 center={"lat": 37.8, "lon": -85.8},
                 zoom=6.2,
@@ -857,10 +856,8 @@ with tab_explorer:
                 "in the **County** filter above."
             )
 
-    # ELSE -> existing per-county hex map logic remains unchanged
+    # ELSE -> per-county hex map
     else:
-        ...
-
         # Filter hexes for this county only, but keep provider/tech filters
         county_hex = hex_df[hex_df["county_fips"] == selected_fips].copy()
 
