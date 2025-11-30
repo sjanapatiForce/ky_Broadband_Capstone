@@ -477,15 +477,18 @@ with tab_overview:
             tech_df = hex_filtered.copy()
             tech_df["tech_types"] = tech_df["tech_types"].fillna("Unknown")
 
+# split semicolon-separated tech_types into individual rows
             tech_long = tech_df.assign(
-                tech=tech_df["tech_types"].str.split(";")
-            ).explode("tech")
+            tech=tech_df["tech_types"].str.split(";")
+                ).explode("tech")
             tech_long["tech"] = tech_long["tech"].str.strip()
+            tech_long = tech_long[tech_long["tech"] != ""]  # drop blanks just in case
+
+# clean, duplicate-free aggregation
             tech_counts = (
-                tech_long["tech"]
-                .value_counts()
-                .reset_index()
-                .rename(columns={"index": "tech", "tech": "count"})
+            tech_long.groupby("tech", as_index=False)
+            .size()
+            .rename(columns={"size": "count"})
             )
 
             fig_tech = px.pie(
@@ -494,7 +497,7 @@ with tab_overview:
                 values="count",
                 title="Share of hex cells by technology type",
             )
-            st.plotly_chart(fig_tech, use_container_width=True)
+
 
     # Devices bar
     with c_right:
