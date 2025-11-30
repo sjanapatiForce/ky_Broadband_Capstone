@@ -1,0 +1,19 @@
+# Ignore huge raw BDC files
+datasets/bdc_data_1/raw/
+datasets/bdc_data_1/processed/
+datasets/bdc_data_1/bdc_all_raw.csv
+
+# Optional temp folders
+datasets/bdc_data_1/tmp/
+datasets/bdc_data_1/intermediate/
+
+# Keep final cleaned datasets
+!datasets/bdc_data_1/final/
+
+# Python / env / VSCode
+__pycache__/
+*.pyc
+.vscode/
+.env
+.venv/
+analysis/broadband_env/
