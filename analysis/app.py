@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import sqlite3
 from pathlib import Path
+import json
 
 # ==================================================
 # CONFIG: locate DB relative to this file
@@ -105,6 +106,22 @@ def load_db():
             df["county_fips"] = df["county_fips"].astype(str).str.zfill(5)
 
     return county_df, provider_df, hex_df
+
+@st.cache_data
+def load_ky_county_geojson():
+    """
+    Load Kentucky county boundaries GeoJSON.
+
+    Expected path: project_root/data/ky_counties.geojson
+    Expected property: properties.GEOID = 5-digit county FIPS
+    """
+    gj_path = PROJECT_ROOT / "data" / "ky_counties.geojson"
+    if not gj_path.exists():
+        return None
+
+    with open(gj_path, "r") as f:
+        return json.load(f)
+
 
 
 def enrich_county_with_hex(county_df: pd.DataFrame, hex_df: pd.DataFrame) -> pd.DataFrame:
@@ -221,6 +238,8 @@ def enrich_county_with_hex(county_df: pd.DataFrame, hex_df: pd.DataFrame) -> pd.
 # ==================================================
 county_df_raw, provider_df, hex_df = load_db()
 county_df = enrich_county_with_hex(county_df_raw, hex_df)
+ky_geojson = load_ky_county_geojson()
+
 
 # Pre-calc lists for filters
 service_categories = sorted(hex_df["service_category"].dropna().unique().tolist())
@@ -551,33 +570,70 @@ with tab_overview:
         )
         st.plotly_chart(fig_edu, use_container_width=True)
 
-    with e_right:
-        if prov_filtered.empty:
-            st.info("No provider records match the current filters.")
-        else:
-            # aggregate by provider across selected counties
-            prov_agg = (
-                prov_filtered.groupby("provider_name", as_index=False)[
-                    ["locations", "underserved_locations"]
-                ]
-                .sum()
-                .sort_values("locations", ascending=False)
-                .head(15)
-            )
+with e_right:
+    if prov_filtered.empty:
+        st.info("No provider records match the current filters.")
+    else:
+        tmp = prov_filtered.copy()
 
-            fig_prov = px.bar(
-                prov_agg,
-                x="locations",
-                y="provider_name",
-                orientation="h",
-                hover_data=["underserved_locations"],
-                title="Provider footprint (locations in scope)",
-            )
-            fig_prov.update_layout(
-                xaxis_title="Reported service locations",
-                yaxis_title="Provider",
-            )
-            st.plotly_chart(fig_prov, use_container_width=True)
+        # make sure numeric
+        tmp["locations"] = pd.to_numeric(tmp["locations"], errors="coerce").fillna(0)
+        tmp["underserved_locations"] = pd.to_numeric(
+            tmp["underserved_locations"], errors="coerce"
+        ).fillna(0)
+
+        # how many providers to show
+        top_n = st.slider(
+            "Number of providers to show (by locations)",
+            min_value=5,
+            max_value=40,
+            value=20,
+            step=5,
+            key="prov_top_n",
+        )
+
+        # aggregate across selected counties
+        prov_agg = (
+            tmp.groupby("provider_name", as_index=False)[
+                ["locations", "underserved_locations"]
+            ]
+            .sum()
+            .sort_values("locations", ascending=False)
+            .head(top_n)
+        )
+
+        # pretty labels like 1,234,567
+        prov_agg["locations_label"] = (
+            prov_agg["locations"].round(0).astype(int).map("{:,}".format)
+        )
+
+        fig_prov = px.bar(
+            prov_agg,
+            x="locations",
+            y="provider_name",
+            orientation="h",
+            hover_data={
+                "locations": ":,",
+                "underserved_locations": ":,",
+                "provider_name": True,
+            },
+            title="Provider footprint (locations in scope)",
+        )
+
+        fig_prov.update_traces(
+            text=prov_agg["locations_label"],
+            textposition="outside",
+            cliponaxis=False,
+        )
+
+        fig_prov.update_layout(
+            xaxis_title="Reported service locations",
+            yaxis_title="Provider",
+            margin=dict(l=0, r=20, t=60, b=40),
+        )
+
+        st.plotly_chart(fig_prov, use_container_width=True)
+
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -636,19 +692,83 @@ with tab_overview:
 # --------------------------------------------------
 with tab_explorer:
     st.markdown("#### County Explorer")
-
+    # IF ALL KENTUCKY -> show statewide county choropleth
     if selected_fips is None:
-        st.info(
-            "Select a specific county in the **County** filter above to explore "
-            "its hex-level coverage map and breakdown."
-        )
-    else:
-        st.markdown(
-            f"Exploring **{selected_county_name} ({selected_fips})** "
-            + (
-                "" if svc_choice == "All" else f" · Service category: **{svc_choice}**"
+        if ky_geojson is None:
+            st.warning(
+                "Kentucky county GeoJSON not found at `data/ky_counties.geojson`. "
+                "Add it to the repo to see the statewide map."
             )
-        )
+        else:
+            st.markdown(
+                "Exploring **All Kentucky** – county-level broadband coverage "
+                "based on FCC BDC hex aggregation."
+            )
+
+            # choose what to color by
+            metric_options = {
+                "Percent unserved hex cells": "pct_unserved_hex",
+                "Percent underserved hex cells": "pct_underserved_hex",
+                "Broadband Quality Score (0–100)": "broadband_quality_score",
+                "Digital Readiness Index (0–100)": "digital_readiness_index",
+            }
+            pretty_to_col = {
+                label: col
+                for label, col in metric_options.items()
+                if col in county_df.columns
+            }
+
+            metric_label = st.selectbox(
+                "Color counties by",
+                list(pretty_to_col.keys()),
+                index=0,
+            )
+            metric_col = pretty_to_col[metric_label]
+
+            df_map = county_df.copy()
+            # convert percents to 0–100 for nicer legend if needed
+            if metric_col in ["pct_unserved_hex", "pct_underserved_hex"]:
+                df_map[metric_col] = df_map[metric_col] * 100
+
+            fig_state = px.choropleth_mapbox(
+                df_map,
+                geojson=ky_geojson,
+                locations="county_fips",
+                featureidkey="properties.GEOID",
+                color=metric_col,
+                hover_name="county_name",
+                hover_data={
+                    "county_fips": True,
+                    "hex_unserved": True,
+                    "hex_underserved": True,
+                    "hex_served": True,
+                    "broadband_quality_score": True,
+                    "digital_readiness_index": True,
+                },
+                mapbox_style="carto-positron",
+                center={"lat": 37.8, "lon": -85.8},
+                zoom=6.2,
+                opacity=0.8,
+                height=650,
+                color_continuous_scale="RdYlGn_r",  # red=bad, green=good
+            )
+            fig_state.update_layout(margin={"r": 0, "t": 10, "l": 0, "b": 0})
+
+            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            st.subheader("Statewide county-level broadband map")
+            st.plotly_chart(fig_state, use_container_width=True)
+            st.caption(
+                "Each polygon is a Kentucky county. Colors show the selected metric "
+                "(e.g., percent unserved hex cells or broadband quality score) "
+                "derived from hex-level FCC BDC data."
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            st.info(
+                "To see the detailed **H3 hex map** for a single county, choose a county "
+                "in the **County** filter above."
+            )
+    else:
 
         # Filter hexes for this county only, but keep provider/tech filters
         county_hex = hex_df[hex_df["county_fips"] == selected_fips].copy()
