@@ -2,4 +2,3 @@ streamlit
 pandas
 plotly
 h3
-sqlite3-binary

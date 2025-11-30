@@ -6,7 +6,7 @@ import plotly.express as px
 # =========================================================
 # CONFIG
 # =========================================================
-DB_PATH = r"H:\Broadband_Project_1\analysis\broadband_ky.db"
+DB_PATH = r"db\broadband_ky.db"
 
 st.set_page_config(
     page_title="KY Broadband Analytics Portal",
