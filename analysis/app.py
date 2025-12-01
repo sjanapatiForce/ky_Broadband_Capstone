@@ -224,10 +224,10 @@ def enrich_county_with_hex(county_df: pd.DataFrame, hex_df: pd.DataFrame) -> pd.
     poverty_norm = normalize_series(poverty_comfort)
 
     df["digital_readiness_index"] = 100 * (
-        edu_norm * 0.35
-        + device_norm * 0.25
-        + income_norm * 0.25
-        + poverty_norm * 0.15
+
+        + device_norm * 0.50
+        + income_norm * 0.50
+
     )
 
     return df
